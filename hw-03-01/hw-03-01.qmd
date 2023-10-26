@@ -1,0 +1,715 @@
+---
+title: "Homework 3- Part1"
+author: "Riyanshi Bohra"
+format: html
+editor: visual
+---
+
+# Homework 3- Classification: Basic Concepts and Techniques
+
+## Setting up
+
+## Spam Dataset
+
+```{r}
+# Installing and loading essential packages using pacman
+if(!require(pacman))
+  install.packages("pacman")
+
+pacman::p_load(tidyverse, rpart, rpart.plot, caret, 
+  lattice, FSelector, sampling, pROC, mlbench)
+library(dplyr)
+```
+
+```{r}
+# Loading the spam.csv dataset into the spam variable
+spam <- read.csv("/Users/riyanshibohra/Desktop/Homework3/spam.csv")
+```
+
+```{r}
+# Displaying the first 6 rows of the spam dataset
+head(spam)
+
+# Interpretation:
+# The dataset consists of several features like 'crl.tot', 'dollar', etc., with data types mentioned.
+# The sample data suggests that emails with the given features are labeled as 'y' for spam
+```
+
+```{r}
+# Converting logical and character columns in spam to factors
+spam <- spam |>
+  mutate(across(where(is.logical), factor, levels = c(TRUE, FALSE))) |>
+  mutate(across(where(is.character), factor))
+```
+
+```{r}
+# Providing a summary of the spam dataset
+summary(spam)
+```
+
+## Decision Trees
+
+```{r}
+library(rpart)
+```
+
+### Default Decision Tree: Pre-Pruning
+
+```{r}
+# Creating a default decision tree model using all predictors
+tree_default <- spam |> 
+  rpart(yesno ~ ., data = _)
+tree_default
+
+#Interpretation:
+# The decision tree has been trained on 4601 samples, and the structure shows how splits are made based on features
+# For example, emails with 'dollar' less than 0.0555 mostly fall into the 'n' category (not spam)
+```
+
+### Plotting the default model
+
+```{r}
+# Visualizing the default decision tree model
+library(rpart.plot)
+rpart.plot(tree_default, extra = 2)
+```
+
+### Full Decision Tree
+
+```{r}
+# Creating a full decision tree with specified control parameters
+tree_full <- spam |> 
+  rpart(yesno ~ . , data = _, 
+        control = rpart.control(minsplit = 2, cp = 0))
+```
+
+### Plotting the full Decision Tree
+
+```{r}
+# Plotting the tree
+rpart.plot(tree_full, extra = 2, 
+           roundint=FALSE,
+            box.palette = list("Gy", "Gn")) 
+```
+
+```{r}
+# Displaying the full decision tree model details
+tree_full
+```
+
+### Training Error: Default model
+
+```{r}
+# Displaying the first 6 predictions from the default tree model
+predict(tree_default, spam) |> head ()
+
+# Interpretation:
+# The model predicts probabilities for each email being 'n' (not spam) and 'y' (spam)
+# For the first email, there's a 76.55% chance it's spam and 23.45% chance it's not
+```
+
+```{r}
+# Extracting class predictions and displaying the first 6 of them
+pred <- predict(tree_default, spam, type="class")
+head(pred)
+```
+
+#### Confusion Matrix
+
+```{r}
+# Creating a confusion table for the predictions
+confusion_table <- with(spam, table(yesno, pred))
+confusion_table
+
+
+# Interpretation:
+# The confusion matrix shows the true positives, false positives, true negatives, and false negatives.
+# Out of the emails predicted as not spam ('n'), 2517 were correctly classified, while 364 were incorrectly classified.
+```
+
+#### Prediction accuracy
+
+```{r}
+# Calculating the number of correct predictions
+correct <- confusion_table |> diag() |> sum()
+correct
+
+
+# The model made 3966 correct predictions out of the total
+```
+
+```{r}
+# Calculating the number of incorrect predictions
+error <- confusion_table |> sum() - correct
+error
+
+
+# The model made 635 incorrect predictions out of the total
+```
+
+```{r}
+# Calculating the prediction accuracy
+accuracy <- correct / (correct + error)
+accuracy
+
+# Interpretation:
+# The model's accuracy is approximately 86.2%, indicating it correctly predicts the spam status for 86.2% of the emails
+# This is a fairly high accuracy, suggesting the model is effective
+```
+
+#### Function for accuracy
+
+```{r}
+# Creating an accuracy function for predictions
+accuracy <- function(truth, prediction) {
+    tbl <- table(truth, prediction)
+    sum(diag(tbl))/sum(tbl)
+}
+
+accuracy(spam |> pull(yesno), pred)
+```
+
+### Training Error: Full Decision Tree model
+
+```{r}
+# Calculating accuracy for the full decision tree model
+accuracy(spam |> pull(yesno), 
+         predict(tree_full, spam, type = "class"))
+
+# Interpretation:
+# The full decision tree model's accuracy is approximately 95.6%.
+# This suggests that the full tree model performs even better than the default one
+```
+
+#### Confusion table using Caret
+
+```{r}
+# Generating a detailed confusion matrix using the caret package
+library(caret)
+confusionMatrix(data = pred, 
+                reference = spam |> pull(yesno))
+
+# Interpretation:
+# The detailed confusion matrix provides various metrics like sensitivity, specificity, and positive predictive value
+# For example, the model has a sensitivity of 90.28%, meaning it correctly identifies 90.28% of the non-spam emails
+```
+
+### Predictions for New data
+
+```{r}
+# Creating a tibble for a new email with made-up columns
+
+my_email <- tibble(
+  crl.tot = 50,    
+  dollar = 0.201,
+  bang = 0.62,
+  money = 0.55,
+  n000 = 0.5,
+  make = 0,
+  yesno = NA)     # The target column 
+```
+
+```{r}
+predict(tree_default , my_email, type = "class")
+
+
+# Interpretation:
+# The model predicts the new email to be in the "y" category (Indicating it's spam).
+# The possible categories for prediction are "n" (not spam) and "y" (spam)`
+```
+
+### Model evaluation with Caret
+
+```{r}
+# Loading the 'caret' and 'doMC' libraries to enable parallel processing with 4 cores for model training
+
+library(caret)
+library(doMC)
+registerDoMC(cores=4)
+getDoParWorkers()
+
+```
+
+```{r}
+set.seed(2000)
+```
+
+#### Creating the Train and Test data
+
+```{r}
+# Splitting the data and creating the 80% training set
+inTrain <- createDataPartition(y = spam$yesno, p = .8, list = FALSE)
+spam_train <- spam[inTrain, ]
+```
+
+```{r}
+# Creating the remaining 20% test data
+spam_test <- spam[-inTrain, ]
+```
+
+#### Learn a Model on Training data
+
+```{r}
+# Training a decision tree ("rpart") on the 'spam_train' dataset using 10-fold cross-validation with varying cp values
+
+fit <- spam_train |>
+  train(yesno ~ .,
+    data = _ ,
+    method = "rpart",
+    control = rpart.control(minsplit = 2),
+    trControl = trainControl(method = "cv", number = 10),
+    tuneLength = 5)
+
+fit
+
+
+# Interpretation:
+# The CART model was trained on 3682 samples with 6 predictors and 2 classes (n and y).
+# After cross-validation, the optimal cp chosen for the model was approximately 0.0055, which gave the highest accuracy
+```
+
+##### Plotting the trained model
+
+```{r}
+# Visualizing the trained decision tree model
+rpart.plot(fit$finalModel, extra = 2,
+  box.palette = list("Bu", "Gn"))
+
+# Interpretation:
+# The resulting plot provides a visual representation of the decision tree's structure, showing how splits are made based on feature values
+```
+
+##### Variable Importance
+
+```{r}
+# Calculating and displaying the variable importance for each predictor in the trained decision tree model
+varImp(fit)
+
+
+# Interpretation:
+# The 'bang' feature has the highest importance in the model, followed by 'dollar', 'money', and so on. The 'make' feature has the least importance with a score of 0
+```
+
+```{r}
+# Calculating the variable importance without considering competing splits 
+imp <- varImp(fit, compete = FALSE)
+imp
+
+
+# Interpretation:
+# Using this method, the 'dollar' feature is deemed most important, followed by 'bang', 'crl.tot', and so on. The 'make' and 'n000' features have the least importance with scores of 0
+```
+
+```{r}
+# Plotting the variable importance values for a visual comparison
+ggplot(imp)
+
+# Interpretation:
+# The resulting plot visually displays that the 'dollar' feature is the most important predictor in the model, with a significantly higher importance score than other features
+```
+
+#### Testing: Confusion Matrix and Accuracy
+
+```{r}
+# Using the test data for the best model
+pred <- predict(fit, newdata = spam_test)
+pred
+```
+
+```{r}
+# Plotting the confusion matrix
+confusionMatrix(data = pred, 
+                ref = spam_test |> pull(yesno))
+
+#Interpretation:
+
+# The model exhibits good accuracy (87.16%), sensitivity (92.64% for class 'n') and specificity (78.73% for class 'y')
+```
+
+### Model Comparison
+
+```{r}
+# Splitting the training set into 10 folds for cross-validation
+train_index <- createFolds(spam_train$yesno, k = 10)
+```
+
+#### Building models
+
+```{r}
+# Building a CART (Decision Tree) model with 10 different tuning parameters
+rpartFit <- spam_train |> 
+  train(yesno ~ .,
+        data = _,
+        method = "rpart",
+        tuneLength = 10,
+        trControl = trainControl(method = "cv", indexOut = train_index)
+  )
+```
+
+```{r}
+# Building a kNearestNeighbors model with 10 different tuning parameters and scaled features
+
+knnFit <- spam_train |> 
+  train(yesno ~ .,
+        data = _,
+        method = "knn",
+        preProcess = "scale",
+          tuneLength = 10,
+          trControl = trainControl(method = "cv", indexOut = train_index)
+  )
+```
+
+#### Finding accuracy
+
+```{r}
+# Comparing accuracy over all folds
+resamps <- resamples(list(
+        CART = rpartFit,
+        kNearestNeighbors = knnFit
+        ))
+
+summary(resamps)
+
+
+# Interpretation
+# The kNearestNeighbors model slightly outperforms the CART model in both accuracy and Kappa metrics across 10 resamples
+
+```
+
+```{r}
+# Visualizing the accuracy comparison of the two models using boxplots
+
+library(lattice)
+bwplot(resamps, layout = c(1, 1))
+
+
+#Interpretation:
+# The CART model slightly outperforms the kNearestNeighbors model in terms of accuracy and consistency in the cross-validation assessment
+```
+
+```{r}
+# Calculate the differences in performance metrics between the CART and kNearestNeighbors 
+
+difs <- diff(resamps)
+difs
+```
+
+```{r}
+
+# Summarize the calculated differences
+summary(difs)
+
+# Interpretation:
+# The KNN model outperforms the CART model by approximately 0.006 in accuracy and 0.013 in Kappa. The p-values suggest significance in these differences
+
+```
+
+### Feature selection and Feature Preparation
+
+```{r}
+library(FSelector)
+```
+
+#### Univariate Feature Importance Score
+
+```{r}
+# Finding the feature importance score which measure how important each feature is with respect to the target
+weights <- spam_train |> 
+  chi.squared(yesno ~ ., data = _) |>
+  as_tibble(rownames = "feature") |>
+  arrange(desc(attr_importance))
+
+weights
+
+# Interpretation:
+# The feature with the highest importance score is 'bang,' closely followed by 'dollar.' This indicates that these two columns are the most significant in predicting our class variable
+
+```
+
+```{r}
+
+# Plotting the feature importance in descending order
+ggplot(weights,
+  aes(x = attr_importance, y = reorder(feature, attr_importance))) +
+  geom_bar(stat = "identity") +
+  xlab("Importance score") + 
+  ylab("Feature")
+
+# The plot visualizes the above interpretation for easier analysis
+```
+
+```{r}
+# Getting the best 3 features
+subset <- cutoff.k(weights |> 
+                   column_to_rownames("feature"), 3)
+subset
+```
+
+```{r}
+# Using only the best 3 features to build a model using FSelector
+
+f <- as.simple.formula(subset, "yesno")
+f
+```
+
+```{r}
+
+# Training the CART decision tree model and plotting the tree structure
+m <- spam_train |> rpart(f, data = _)
+rpart.plot(m, extra = 2, roundint = FALSE)
+
+# Interpretation:
+# A visual representation of the decision tree constructed using the rpart algorithm. The tree splits the data based on features' values to classify the 'yesno' outcome
+
+```
+
+```{r}
+# Calculate the gain ratio importance for each feature in the dataset and arrange them in descending order
+
+spam_train |> 
+  gain.ratio(yesno ~ ., data = _) |>
+  as_tibble(rownames = "feature") |>
+  arrange(desc(attr_importance))
+
+# Interpretation:
+# The 'money' feature has the highest gain ratio importance, followed by 'n000', 'dollar', 'bang', 'crl.tot', and 'make'
+
+```
+
+#### Feature Subset Selection
+
+```{r}
+
+# Determine the optimal subset of features for classification using the CFS method
+
+spam_train |> 
+  cfs(yesno ~ ., data = _)
+
+
+# Interpretation:
+# The CFS method has selected 'dollar', 'bang', 'money', and 'n000' as the most relevant features 
+
+```
+
+```{r}
+
+# Defining a function 'evaluator' to train a decision tree model with a subset of features and return its accuracy
+evaluator <- function(subset) {
+  model <- spam_train |> 
+    train(as.simple.formula(subset, "yesno"),
+          data = _,
+          method = "rpart",
+          trControl = trainControl(method = "boot", number = 5),
+          tuneLength = 0)
+  results <- model$resample$Accuracy
+  cat("Trying features:", paste(subset, collapse = " + "), "\n")
+  m <- mean(results)
+  cat("Accuracy:", round(m, 2), "\n\n")
+  m
+}
+```
+
+```{r}
+# Extract all column names except 'yesno' from the dataset
+
+features <- spam_train |> colnames() |> setdiff("yesno")
+```
+
+```{r}
+# For the section using Dummy Variables for Factors
+
+# Note: In this dataset, there is only one nominal feature which is 'yesno' which also happens to be the target variable and hence cannot be considered in this scenario
+```
+
+### Class Imbalance
+
+```{r}
+# Plotting the class distribution
+ggplot(spam, aes(y = yesno)) + geom_bar()
+
+
+# Interpretation:
+# The class variable is not balanced. There are more instances of 'no' as compared to 'yes'
+```
+
+```{r}
+spam_binary <- spam |> 
+  mutate(yesno = factor(spam$yesno == "yes", 
+                        levels = c(FALSE, TRUE),
+                        labels = c("non-spam", "spam")))
+```
+
+```{r}
+# Providing summary statistics for spam dataset
+summary(spam)
+```
+
+```{r}
+
+# Splitting the data into a training set (50%) and a testing set (50%).
+
+set.seed(1234)
+
+inTrain <- createDataPartition(y = spam$yesno, p = .5, list = FALSE)
+training_spam <- spam[inTrain, ]
+testing_spam <- spam[-inTrain, ]
+
+```
+
+#### Option1: Use data as is
+
+```{r}
+# Training a decision tree (CART) model on the training data using cross-validation
+fit <- training_spam |> 
+  train(yesno ~ .,
+        data = _,
+        method = "rpart",
+        trControl = trainControl(method = "cv"))
+```
+
+```{r}
+# Displaying the training results for the decision tree model.
+fit
+
+# The CART model with a complexity parameter (cp) of 0.0424 has the highest accuracy of 0.829 in cross-validation
+```
+
+#### Option2: Balance Data with Resampling
+```{r}
+# Stratified sampling to balance the number of 'yes' and 'no' instances
+
+library(sampling)
+set.seed(1000) # for repeatability
+
+id <- strata(training_spam, stratanames = "yesno", size = c(50, 50), method = "srswr")
+table(training_spam$type)
+```
+
+```{r}
+# Training a decision tree with a minimum split criteria of 5
+
+fit <- training_spam |> 
+  train(yesno ~ .,
+        data = _,
+        method = "rpart",
+        trControl = trainControl(method = "cv"),
+        control = rpart.control(minsplit = 5))
+
+fit
+
+# Interpretation:
+# The CART model with a complexity parameter (cp) of 0.0424 achieves an accuracy of 0.825 in cross-validation.
+
+```
+
+```{r}
+# Plotting the decision tree structure.
+rpart.plot(fit$finalModel, extra = 2)
+```
+
+#### Option3: Build a larger tree
+```{r}
+# Building a comparatively larger tree
+fit <- training_spam |> 
+  train(yesno ~ .,
+        data = _,
+        method = "rpart",
+        tuneLength = 10,
+        trControl = trainControl(method = "cv",
+        classProbs = TRUE,  
+        summaryFunction=twoClassSummary),  
+        metric = "ROC",
+        control = rpart.control(minsplit = 3))
+```
+
+```{r}
+fit
+
+# Interpretation:
+# The CART model optimized for ROC has a value of 0.884 at cp = 0.00331
+```
+
+```{r}
+# Visualizing the trained decision tree
+rpart.plot(fit$finalModel, extra = 2)
+```
+
+```{r}
+# Generating class probabilities for the testing data
+prob <- predict(fit, testing_spam, type = "prob")
+tail(prob)
+
+# Displaying the last six rows of predicted probabilities for being 'yes' or 'no'
+```
+
+```{r}
+# Factoring issues
+#pred <- as.factor(ifelse(prob[,"y"]>=0.01, "yes", "no"))
+
+#confusionMatrix(data = pred,
+                #ref = testing_spam$yesno, positive = "y")
+```
+
+```{r}
+# Constructing the ROC curve for the model's predictions
+library("pROC")
+r <- roc(testing_spam$yesno == "y", prob[,"y"])
+```
+
+```{r}
+r
+
+# Interpretation:
+# The model achieves an area under the ROC curve (AUC) of 0.893
+```
+
+```{r}
+# Plotting the ROC curve
+ggroc(r) + geom_abline(intercept = 1, slope = 1, color = "darkgrey")
+
+# Interpretation:
+# The ROC curve indicates good model performance with AUC close to 1; the plot shows sensitivity vs. specificity
+```
+#### Option 4: Use a Cost-Sensitive Classifier
+```{r}
+# Defining a cost matrix to penalize false negatives more heavily
+cost <- matrix(c(
+  0,   1,
+  100, 0
+), byrow = TRUE, nrow = 2)
+cost
+
+# The cost matrix heavily penalizes false negatives (100 times more than false positives).
+```
+
+```{r}
+# Training a decision tree using the defined cost matrix
+fit <- training_spam |> 
+  train(yesno ~ .,
+        data = _,
+        method = "rpart",
+        parms = list(loss = cost),
+        trControl = trainControl(method = "cv"))
+```
+
+```{r}
+fit
+
+# Interpretation:
+# The decision tree, when trained with the cost matrix, results in a low accuracy of 0.394 due to the heavy penalty on false negatives
+```
+
+```{r}
+# Plotting the decision tree trained with the cost matrix
+rpart.plot(fit$finalModel, extra = 2)
+```
+
+```{r}
+# Generating a confusion matrix for the model's predictions on the testing set
+confusionMatrix(data = predict(fit, testing_spam),
+                ref = testing_spam$yesno, positive = "y")
+
+# Interpretation: 
+# The model predicts all instances as 'yes', resulting in high sensitivity but zero specificity due to the cost matrix used.
+
+```
