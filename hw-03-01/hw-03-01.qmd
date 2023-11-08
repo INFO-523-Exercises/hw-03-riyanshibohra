@@ -23,7 +23,7 @@ library(dplyr)
 
 ```{r}
 # Loading the spam.csv dataset into the spam variable
-spam <- read.csv("/Users/riyanshibohra/Desktop/Homework3/spam.csv")
+spam <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-08-15/spam.csv')
 ```
 
 ```{r}
@@ -575,6 +575,7 @@ fit
 ```
 
 #### Option2: Balance Data with Resampling
+
 ```{r}
 # Stratified sampling to balance the number of 'yes' and 'no' instances
 
@@ -608,6 +609,7 @@ rpart.plot(fit$finalModel, extra = 2)
 ```
 
 #### Option3: Build a larger tree
+
 ```{r}
 # Building a comparatively larger tree
 fit <- training_spam |> 
@@ -670,7 +672,9 @@ ggroc(r) + geom_abline(intercept = 1, slope = 1, color = "darkgrey")
 # Interpretation:
 # The ROC curve indicates good model performance with AUC close to 1; the plot shows sensitivity vs. specificity
 ```
+
 #### Option 4: Use a Cost-Sensitive Classifier
+
 ```{r}
 # Defining a cost matrix to penalize false negatives more heavily
 cost <- matrix(c(
