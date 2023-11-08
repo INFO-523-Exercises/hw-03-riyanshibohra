@@ -47,7 +47,7 @@ options(digits=3)
 
 ```{r}
 # Loading the spam.csv dataset into the spam variable
-spam_data <- read.csv("/Users/riyanshibohra/Desktop/Homework3/spam.csv")
+spam_data <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-08-15/spam.csv')
 spam_data |> glimpse()
 ```
 
